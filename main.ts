@@ -10,8 +10,8 @@ export default class PaperCitationCounterPlugin extends Plugin {
 
 	async onload() {
 		this.addCommand({
-			id: 'count-bullet-items',
-			name: 'Count Bullet Items in Papers Folder',
+			id: 'count-related-work-items',
+			name: 'Count Related Work Items in Papers Folder',
 			callback: () => {
 				this.countBulletItems();
 			}
@@ -42,8 +42,8 @@ export default class PaperCitationCounterPlugin extends Plugin {
 				const content = await this.app.vault.read(file);
 				console.log('File content length:', content.length);
 				
-				const fileBulletItems = this.parseBulletItems(content);
-				console.log('Bullet items found in', file.path, ':', fileBulletItems.length);
+				const fileBulletItems = this.parseBulletItemsFromRelatedWork(content);
+				console.log('Related work bullet items found in', file.path, ':', fileBulletItems.length);
 				
 				for (const item of fileBulletItems) {
 					const key = item.trim();
@@ -65,7 +65,7 @@ export default class PaperCitationCounterPlugin extends Plugin {
 			console.log('Total unique bullet items collected:', bulletItems.size);
 			const report = this.generateReport(Array.from(bulletItems.values()));
 			await this.createReportFile(report);
-			new Notice('Bullet item analysis complete!');
+			new Notice('Related work analysis complete!');
 			
 		} catch (error) {
 			new Notice('Error analyzing bullet items: ' + error.message);
@@ -73,15 +73,24 @@ export default class PaperCitationCounterPlugin extends Plugin {
 		}
 	}
 
-	parseBulletItems(content: string): string[] {
-		const lines = content.split('\n');
+	parseBulletItemsFromRelatedWork(content: string): string[] {
+		const relatedWorkMatch = content.match(/## Related work([\s\S]*?)(?=\n##|\n#|$)/i);
+		if (!relatedWorkMatch) {
+			console.log('No Related work section found');
+			return [];
+		}
+
+		const relatedWorkSection = relatedWorkMatch[1];
+		console.log('Related work section found, length:', relatedWorkSection.length);
+		
+		const lines = relatedWorkSection.split('\n');
 		const bulletLines = lines.filter(line => {
 			const trimmed = line.trim();
 			return trimmed.startsWith('- ') && trimmed.length > 2;
 		});
 		
-		console.log('Raw bullet lines found:', bulletLines.length);
-		console.log('Sample bullet lines:', bulletLines.slice(0, 5));
+		console.log('Bullet lines in Related work section:', bulletLines.length);
+		console.log('Sample bullet lines:', bulletLines.slice(0, 3));
 		
 		const bulletItems = bulletLines.map(line => {
 			return line.trim().substring(2).trim();
@@ -97,9 +106,9 @@ export default class PaperCitationCounterPlugin extends Plugin {
 		const maxCount = Math.max(...bulletItems.map(item => item.count));
 		const multipleItems = bulletItems.filter(item => item.count > 1).length;
 
-		let report = `# Bullet Item Analysis\n`;
+		let report = `# Related Work Analysis\n`;
 		report += `Generated: ${new Date().toISOString().split('T')[0]}\n`;
-		report += `Source: Papers folder\n\n`;
+		report += `Source: Papers folder - Related work sections\n\n`;
 		report += `## Most Common Items\n\n`;
 
 		for (let i = 0; i < Math.min(20, sortedItems.length); i++) {
@@ -118,7 +127,7 @@ export default class PaperCitationCounterPlugin extends Plugin {
 	}
 
 	async createReportFile(report: string) {
-		const fileName = `Bullet Item Analysis ${new Date().toISOString().split('T')[0]}.md`;
+		const fileName = `Related Work Analysis ${new Date().toISOString().split('T')[0]}.md`;
 		const filePath = fileName;
 		
 		try {
