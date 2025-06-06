@@ -74,7 +74,7 @@ export default class PaperCitationCounterPlugin extends Plugin {
 	}
 
 	parseBulletItemsFromRelatedWork(content: string): string[] {
-		const relatedWorkMatch = content.match(/## Related work([\s\S]*?)(?=\n##|\n#|$)/i);
+		const relatedWorkMatch = content.match(/## Related work([\s\S]*?)(?=\n## (?!.*Related work)|$)/i);
 		if (!relatedWorkMatch) {
 			console.log('No Related work section found');
 			return [];
@@ -82,6 +82,7 @@ export default class PaperCitationCounterPlugin extends Plugin {
 
 		const relatedWorkSection = relatedWorkMatch[1];
 		console.log('Related work section found, length:', relatedWorkSection.length);
+		console.log('Related work content preview:', JSON.stringify(relatedWorkSection.substring(0, 300)));
 		
 		const lines = relatedWorkSection.split('\n');
 		const bulletLines = lines.filter(line => {
@@ -90,7 +91,7 @@ export default class PaperCitationCounterPlugin extends Plugin {
 		});
 		
 		console.log('Bullet lines in Related work section:', bulletLines.length);
-		console.log('Sample bullet lines:', bulletLines.slice(0, 3));
+		console.log('Sample bullet lines:', bulletLines.slice(0, 5));
 		
 		const bulletItems = bulletLines.map(line => {
 			return line.trim().substring(2).trim();
