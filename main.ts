@@ -77,26 +77,35 @@ export default class PaperCitationCounterPlugin extends Plugin {
 	}
 
 	parseRelatedWork(content: string): Omit<PaperCitation, 'count' | 'sources'>[] {
-		const relatedWorkMatch = content.match(/## Related work([\s\S]*?)(?=##|$)/);
+		const relatedWorkMatch = content.match(/## Related work([\s\S]*?)(?=\n##|\n#|$)/i);
 		if (!relatedWorkMatch) {
 			console.log('No Related work section found');
 			return [];
 		}
 
 		const relatedWorkSection = relatedWorkMatch[1];
-		console.log('Related work section:', relatedWorkSection);
+		console.log('Related work section length:', relatedWorkSection.length);
+		console.log('Related work section:', JSON.stringify(relatedWorkSection.substring(0, 200)));
 		
-		const citationRegex = /- (.+?), (\d{4}), (.+?)(?=\n|$)/gm;
+		const lines = relatedWorkSection.split('\n');
+		const citationLines = lines.filter(line => line.trim().startsWith('- ') && line.includes(', '));
+		console.log('Citation lines found:', citationLines.length);
+		console.log('Citation lines:', citationLines);
+		
 		const citations: Omit<PaperCitation, 'count' | 'sources'>[] = [];
 		
-		let match;
-		while ((match = citationRegex.exec(relatedWorkSection)) !== null) {
-			console.log('Found citation:', match[1], match[2], match[3]);
-			citations.push({
-				authors: match[1].trim(),
-				year: match[2].trim(),
-				title: match[3].trim()
-			});
+		for (const line of citationLines) {
+			const match = line.match(/- (.+?), (\d{4}), (.+)/);
+			if (match) {
+				console.log('Parsed citation:', match[1], match[2], match[3]);
+				citations.push({
+					authors: match[1].trim(),
+					year: match[2].trim(),
+					title: match[3].trim()
+				});
+			} else {
+				console.log('Failed to parse line:', line);
+			}
 		}
 		
 		console.log('Total citations found:', citations.length);
