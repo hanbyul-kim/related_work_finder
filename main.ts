@@ -1,134 +1,140 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Notice, Plugin, TFile } from 'obsidian';
 
-// Remember to rename these classes and interfaces!
-
-interface MyPluginSettings {
-	mySetting: string;
+interface PaperCitation {
+	authors: string;
+	year: string;
+	title: string;
+	count: number;
+	sources: string[];
 }
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
-
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+export default class PaperCitationCounterPlugin extends Plugin {
 
 	async onload() {
-		await this.loadSettings();
-
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
-
-		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
+			id: 'count-paper-citations',
+			name: 'Count Paper Citations in Papers Folder',
 			callback: () => {
-				new SampleModal(this.app).open();
+				this.countPaperCitations();
 			}
 		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-			}
-		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
 	}
 
 	onunload() {
-
+		
 	}
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+	async countPaperCitations() {
+		try {
+			const papersFolder = this.app.vault.getAbstractFileByPath('Papers');
+			if (!papersFolder) {
+				new Notice('Papers folder not found!');
+				return;
+			}
+
+			const citations = new Map<string, PaperCitation>();
+			const markdownFiles = this.app.vault.getMarkdownFiles()
+				.filter(file => file.path.startsWith('Papers/'));
+
+			for (const file of markdownFiles) {
+				const content = await this.app.vault.read(file);
+				const fileCitations = this.parseRelatedWork(content);
+				
+				for (const citation of fileCitations) {
+					const key = `${citation.authors}, ${citation.year}`;
+					
+					if (citations.has(key)) {
+						const existing = citations.get(key)!;
+						existing.count++;
+						existing.sources.push(file.basename);
+					} else {
+						citations.set(key, {
+							...citation,
+							count: 1,
+							sources: [file.basename]
+						});
+					}
+				}
+			}
+
+			const report = this.generateReport(Array.from(citations.values()));
+			await this.createReportFile(report);
+			new Notice('Paper citation analysis complete!');
+			
+		} catch (error) {
+			new Notice('Error analyzing citations: ' + error.message);
+			console.error('Citation analysis error:', error);
+		}
 	}
 
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
-}
+	parseRelatedWork(content: string): Omit<PaperCitation, 'count' | 'sources'>[] {
+		const relatedWorkMatch = content.match(/## Related work([\s\S]*?)(?=##|$)/);
+		if (!relatedWorkMatch) {
+			console.log('No Related work section found');
+			return [];
+		}
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
-
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
-
-	constructor(app: App, plugin: MyPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
+		const relatedWorkSection = relatedWorkMatch[1];
+		console.log('Related work section:', relatedWorkSection);
+		
+		const citationRegex = /- (.+?), (\d{4}), (.+?)(?=\n|$)/gm;
+		const citations: Omit<PaperCitation, 'count' | 'sources'>[] = [];
+		
+		let match;
+		while ((match = citationRegex.exec(relatedWorkSection)) !== null) {
+			console.log('Found citation:', match[1], match[2], match[3]);
+			citations.push({
+				authors: match[1].trim(),
+				year: match[2].trim(),
+				title: match[3].trim()
+			});
+		}
+		
+		console.log('Total citations found:', citations.length);
+		return citations;
 	}
 
-	display(): void {
-		const {containerEl} = this;
+	generateReport(citations: PaperCitation[]): string {
+		const sortedCitations = citations.sort((a, b) => b.count - a.count);
+		const totalUnique = citations.length;
+		const totalInstances = citations.reduce((sum, c) => sum + c.count, 0);
+		const maxCitations = Math.max(...citations.map(c => c.count));
+		const multipleCitations = citations.filter(c => c.count > 1).length;
 
-		containerEl.empty();
+		let report = `# Paper Citation Analysis\n`;
+		report += `Generated: ${new Date().toISOString().split('T')[0]}\n`;
+		report += `Source: Papers folder\n\n`;
+		report += `## Most Cited Papers\n\n`;
 
-		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
+		for (let i = 0; i < Math.min(20, sortedCitations.length); i++) {
+			const citation = sortedCitations[i];
+			report += `${i + 1}. **${citation.authors}, ${citation.year}** (${citation.count}회)\n`;
+			report += `   - *${citation.title}*\n`;
+			report += `   - Sources: ${citation.sources.join(', ')}\n\n`;
+		}
+
+		report += `## Statistics\n`;
+		report += `- Total unique citations: ${totalUnique}\n`;
+		report += `- Total citation instances: ${totalInstances}\n`;
+		report += `- Most cited: ${maxCitations} times\n`;
+		report += `- Papers with multiple citations: ${multipleCitations}\n`;
+
+		return report;
+	}
+
+	async createReportFile(report: string) {
+		const fileName = `Paper Citation Analysis ${new Date().toISOString().split('T')[0]}.md`;
+		const filePath = fileName;
+		
+		try {
+			await this.app.vault.create(filePath, report);
+		} catch (error) {
+			if (error.message.includes('already exists')) {
+				const existingFile = this.app.vault.getAbstractFileByPath(filePath) as TFile;
+				await this.app.vault.modify(existingFile, report);
+			} else {
+				throw error;
+			}
+		}
 	}
 }
