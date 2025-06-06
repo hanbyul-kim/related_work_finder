@@ -1,9 +1,7 @@
 import { App, Notice, Plugin, TFile } from 'obsidian';
 
-interface PaperCitation {
-	authors: string;
-	year: string;
-	title: string;
+interface BulletItem {
+	content: string;
 	count: number;
 	sources: string[];
 }
@@ -12,10 +10,10 @@ export default class PaperCitationCounterPlugin extends Plugin {
 
 	async onload() {
 		this.addCommand({
-			id: 'count-paper-citations',
-			name: 'Count Paper Citations in Papers Folder',
+			id: 'count-bullet-items',
+			name: 'Count Bullet Items in Papers Folder',
 			callback: () => {
-				this.countPaperCitations();
+				this.countBulletItems();
 			}
 		});
 	}
@@ -24,7 +22,7 @@ export default class PaperCitationCounterPlugin extends Plugin {
 		
 	}
 
-	async countPaperCitations() {
+	async countBulletItems() {
 		try {
 			const papersFolder = this.app.vault.getAbstractFileByPath('Papers');
 			if (!papersFolder) {
@@ -32,7 +30,7 @@ export default class PaperCitationCounterPlugin extends Plugin {
 				return;
 			}
 
-			const citations = new Map<string, PaperCitation>();
+			const bulletItems = new Map<string, BulletItem>();
 			const markdownFiles = this.app.vault.getMarkdownFiles()
 				.filter(file => file.path.startsWith('Papers/'));
 
@@ -43,21 +41,20 @@ export default class PaperCitationCounterPlugin extends Plugin {
 				console.log('Processing file:', file.path);
 				const content = await this.app.vault.read(file);
 				console.log('File content length:', content.length);
-				console.log('File content preview:', content.substring(0, 500));
 				
-				const fileCitations = this.parseRelatedWork(content);
-				console.log('Citations found in', file.path, ':', fileCitations.length);
+				const fileBulletItems = this.parseBulletItems(content);
+				console.log('Bullet items found in', file.path, ':', fileBulletItems.length);
 				
-				for (const citation of fileCitations) {
-					const key = `${citation.authors}, ${citation.year}`;
+				for (const item of fileBulletItems) {
+					const key = item.trim();
 					
-					if (citations.has(key)) {
-						const existing = citations.get(key)!;
+					if (bulletItems.has(key)) {
+						const existing = bulletItems.get(key)!;
 						existing.count++;
 						existing.sources.push(file.basename);
 					} else {
-						citations.set(key, {
-							...citation,
+						bulletItems.set(key, {
+							content: key,
 							count: 1,
 							sources: [file.basename]
 						});
@@ -65,83 +62,63 @@ export default class PaperCitationCounterPlugin extends Plugin {
 				}
 			}
 
-			console.log('Total unique citations collected:', citations.size);
-			const report = this.generateReport(Array.from(citations.values()));
+			console.log('Total unique bullet items collected:', bulletItems.size);
+			const report = this.generateReport(Array.from(bulletItems.values()));
 			await this.createReportFile(report);
-			new Notice('Paper citation analysis complete!');
+			new Notice('Bullet item analysis complete!');
 			
 		} catch (error) {
-			new Notice('Error analyzing citations: ' + error.message);
-			console.error('Citation analysis error:', error);
+			new Notice('Error analyzing bullet items: ' + error.message);
+			console.error('Bullet item analysis error:', error);
 		}
 	}
 
-	parseRelatedWork(content: string): Omit<PaperCitation, 'count' | 'sources'>[] {
-		const relatedWorkMatch = content.match(/## Related work([\s\S]*?)(?=\n##|\n#|$)/i);
-		if (!relatedWorkMatch) {
-			console.log('No Related work section found');
-			return [];
-		}
-
-		const relatedWorkSection = relatedWorkMatch[1];
-		console.log('Related work section length:', relatedWorkSection.length);
-		console.log('Related work section:', JSON.stringify(relatedWorkSection.substring(0, 200)));
+	parseBulletItems(content: string): string[] {
+		const lines = content.split('\n');
+		const bulletLines = lines.filter(line => {
+			const trimmed = line.trim();
+			return trimmed.startsWith('- ') && trimmed.length > 2;
+		});
 		
-		const lines = relatedWorkSection.split('\n');
-		const citationLines = lines.filter(line => line.trim().startsWith('- ') && line.includes(', '));
-		console.log('Citation lines found:', citationLines.length);
-		console.log('Citation lines:', citationLines);
+		console.log('Raw bullet lines found:', bulletLines.length);
+		console.log('Sample bullet lines:', bulletLines.slice(0, 5));
 		
-		const citations: Omit<PaperCitation, 'count' | 'sources'>[] = [];
+		const bulletItems = bulletLines.map(line => {
+			return line.trim().substring(2).trim();
+		});
 		
-		for (const line of citationLines) {
-			const match = line.match(/- (.+?), (\d{4}), (.+)/);
-			if (match) {
-				console.log('Parsed citation:', match[1], match[2], match[3]);
-				citations.push({
-					authors: match[1].trim(),
-					year: match[2].trim(),
-					title: match[3].trim()
-				});
-			} else {
-				console.log('Failed to parse line:', line);
-			}
-		}
-		
-		console.log('Total citations found:', citations.length);
-		return citations;
+		return bulletItems;
 	}
 
-	generateReport(citations: PaperCitation[]): string {
-		const sortedCitations = citations.sort((a, b) => b.count - a.count);
-		const totalUnique = citations.length;
-		const totalInstances = citations.reduce((sum, c) => sum + c.count, 0);
-		const maxCitations = Math.max(...citations.map(c => c.count));
-		const multipleCitations = citations.filter(c => c.count > 1).length;
+	generateReport(bulletItems: BulletItem[]): string {
+		const sortedItems = bulletItems.sort((a, b) => b.count - a.count);
+		const totalUnique = bulletItems.length;
+		const totalInstances = bulletItems.reduce((sum, item) => sum + item.count, 0);
+		const maxCount = Math.max(...bulletItems.map(item => item.count));
+		const multipleItems = bulletItems.filter(item => item.count > 1).length;
 
-		let report = `# Paper Citation Analysis\n`;
+		let report = `# Bullet Item Analysis\n`;
 		report += `Generated: ${new Date().toISOString().split('T')[0]}\n`;
 		report += `Source: Papers folder\n\n`;
-		report += `## Most Cited Papers\n\n`;
+		report += `## Most Common Items\n\n`;
 
-		for (let i = 0; i < Math.min(20, sortedCitations.length); i++) {
-			const citation = sortedCitations[i];
-			report += `${i + 1}. **${citation.authors}, ${citation.year}** (${citation.count}회)\n`;
-			report += `   - *${citation.title}*\n`;
-			report += `   - Sources: ${citation.sources.join(', ')}\n\n`;
+		for (let i = 0; i < Math.min(20, sortedItems.length); i++) {
+			const item = sortedItems[i];
+			report += `${i + 1}. **${item.content}** (${item.count}회)\n`;
+			report += `   - Sources: ${item.sources.join(', ')}\n\n`;
 		}
 
 		report += `## Statistics\n`;
-		report += `- Total unique citations: ${totalUnique}\n`;
-		report += `- Total citation instances: ${totalInstances}\n`;
-		report += `- Most cited: ${maxCitations} times\n`;
-		report += `- Papers with multiple citations: ${multipleCitations}\n`;
+		report += `- Total unique items: ${totalUnique}\n`;
+		report += `- Total item instances: ${totalInstances}\n`;
+		report += `- Most frequent: ${maxCount} times\n`;
+		report += `- Items appearing multiple times: ${multipleItems}\n`;
 
 		return report;
 	}
 
 	async createReportFile(report: string) {
-		const fileName = `Paper Citation Analysis ${new Date().toISOString().split('T')[0]}.md`;
+		const fileName = `Bullet Item Analysis ${new Date().toISOString().split('T')[0]}.md`;
 		const filePath = fileName;
 		
 		try {
