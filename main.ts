@@ -36,9 +36,17 @@ export default class PaperCitationCounterPlugin extends Plugin {
 			const markdownFiles = this.app.vault.getMarkdownFiles()
 				.filter(file => file.path.startsWith('Papers/'));
 
+			console.log('Found markdown files in Papers folder:', markdownFiles.length);
+			console.log('Files:', markdownFiles.map(f => f.path));
+
 			for (const file of markdownFiles) {
+				console.log('Processing file:', file.path);
 				const content = await this.app.vault.read(file);
+				console.log('File content length:', content.length);
+				console.log('File content preview:', content.substring(0, 500));
+				
 				const fileCitations = this.parseRelatedWork(content);
+				console.log('Citations found in', file.path, ':', fileCitations.length);
 				
 				for (const citation of fileCitations) {
 					const key = `${citation.authors}, ${citation.year}`;
@@ -57,6 +65,7 @@ export default class PaperCitationCounterPlugin extends Plugin {
 				}
 			}
 
+			console.log('Total unique citations collected:', citations.size);
 			const report = this.generateReport(Array.from(citations.values()));
 			await this.createReportFile(report);
 			new Notice('Paper citation analysis complete!');
